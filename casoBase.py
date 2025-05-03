@@ -57,8 +57,10 @@ numPuntosDestino = 24
 numLocalidades = len(locations)
 numVehiculos = 8
 
+print(numLocalidades)
+
 # Conjuntos
-P= RangeSet(1, numPuertos)  
+P= RangeSet(1, numPuertos) 
 D = RangeSet(1, numPuntosDestino)   
 V = RangeSet(1, numVehiculos)
 
@@ -73,12 +75,40 @@ for i in range(1, numVehiculos+1):
     
 V_autonomia = {}
 for i in range(1, numVehiculos+1):
-    V_autonomia[i] = vehiculos['Autonomy'][i-1]
+    V_autonomia[i] = vehiculos['Range'][i-1]
 
 print(V_capacidad)
 
 # Variables de decisión
+Model.x = Var(D,V, domain=Binary) # x[i,j,k] = 1 si el vehiculo k viaja de i a j
+Model.y = Var(V, domain=Binary) # y[k] = 1 si el vehiculo k es utilizado
+Model.u = Var(D,V, domain=NonNegativeReals) # 
+
+# Función objetivo
+Model.obj = Objective(expr=sum(Model.x[i, j, k]*locations[i][j] for i in D for j in D for k in V))
+
+# Restricciones
+
+# Restriccion 1 Cada municipio debe ser visitado por un vehiculo una vez
+Model.res1 = ConstraintList()
+for j in D:
+    Model.res1.add(sum(Model.x[i,j,k] for i in D for k in V) == 1)
+
+# Restriccion 2 Se sale del puerto solo una vez
+Model.res2 = ConstraintList()
+for k in V:
+    Model.res2.add(sum(Model.x[0,j,k] for j in D) == 1)
+
+# Restriccion 3 Cada vehiculo que llega a un municipio debe salir de ese municipio. Restriccion de flujo
+Model.res3 = ConstraintList()
+for j in D:
+    for k in V:
+        Model.res3.add(sum(Model.x[i,j,k] for i in D) == sum(Model.x[j,i,k] for i in D))
+
+# Restriccion 4: eliminacion de subrutas dentro de un vehiculo
+Model.res4 = ConstraintList()
 
 
+# Restriccion 5: no superar la capacidad de los vehiculos
 
-
+# Restriccion 6: no superar la autonomia de los vehiculos
