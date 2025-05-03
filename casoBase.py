@@ -4,6 +4,8 @@ from pyomo.environ import *
 from pyomo.opt import SolverFactory
 
 #----- procesamiento de datos/ encontrando las distancias entre todas las locations -----
+# https://geopy.readthedocs.io/en/stable/#module-geopy.distance 
+
 clientes = pd.read_csv('Proyecto_Caso_Base/clients.csv')
 depositos = pd.read_csv('Proyecto_Caso_Base/depots.csv')
 vehiculos = pd.read_csv('Proyecto_Caso_Base/vehicles.csv')
