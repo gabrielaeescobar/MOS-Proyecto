@@ -34,7 +34,7 @@ for i in range(len(locations_csv)):
     coord = (latitud, longitud)
     locs_i=[]
     j=0
-    while j<27:
+    while j<len(locations_csv):
         latitud2 = locations_csv['Latitude'][j]
         longitud2 = locations_csv['Longitude'][j]
         coord2 = (latitud2, longitud2)
