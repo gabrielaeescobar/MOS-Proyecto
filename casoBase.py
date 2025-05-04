@@ -151,7 +151,7 @@ for k in V:
     )
 
 solver = SolverFactory('glpk')
-solver.options['tmlim'] = 300 # tiempo límite de 5 minutos
+solver.options['tmlim'] = 100 # tiempo límite de 5 minutos
 results = solver.solve(Model, tee=True)
 
 
@@ -202,3 +202,40 @@ for k in V:
     distancia_total += sum(distancias[ruta[i]-1][ruta[i+1]-1] for i in range(len(ruta)-1))
 
 print(f"Distancia total recorrida por todos los vehículos: {round(distancia_total, 2)} km")
+import matplotlib.pyplot as plt
+import networkx as nx
+
+# Coordenadas de cada nodo
+coords = {i+1: (locations_csv['Longitude'][i], locations_csv['Latitude'][i]) for i in range(len(locations_csv))}
+
+for k in V:
+    G = nx.DiGraph()
+    ruta = [1]
+    actual = 1
+    while True:
+        next_nodo = None
+        for j in L:
+            if j != actual and Model.x[actual, j, k].value == 1:
+                next_nodo = j
+                ruta.append(j)
+                actual = j
+                break
+        if next_nodo == 1 or next_nodo is None:
+            break
+
+    if len(ruta) > 1:
+        ruta.append(1)  # cerrar ciclo
+
+        G.add_nodes_from(ruta)
+        for i in range(len(ruta)-1):
+            G.add_edge(ruta[i], ruta[i+1])
+
+        plt.figure(figsize=(10,6))
+        pos = {n: coords[n] for n in ruta}
+        nx.draw_networkx_nodes(G, pos, node_color='skyblue', node_size=500)
+        nx.draw_networkx_labels(G, pos, labels={n: f"{'PTO' if n==1 else f'MUN{n:02d}'}" for n in ruta})
+        nx.draw_networkx_edges(G, pos, arrowstyle='->', arrowsize=20)
+        plt.title(f"Ruta del Vehículo {k}")
+        plt.axis('off')
+        plt.show()
+
