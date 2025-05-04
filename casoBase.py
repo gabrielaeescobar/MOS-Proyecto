@@ -85,105 +85,120 @@ for i in range(1, numVehiculos+1):
 
 print(V_capacidad)
 
-
 # Variables de decisión
 Model.x = Var(L,L,V, domain=Binary) # x[i,j,k] = 1 si el vehiculo k viaja de i a j
-#Model.y = Var(V, domain=Binary) # y[k] = 1 si el vehiculo k es utilizado
-Model.u = Var(L,V, domain=NonNegativeReals) # 
+Model.u = Var(D, V, bounds=(1, numLocalidades - 1), domain=Integers) # u[i,k] = número de localidades visitadas por el vehículo k al visitar la localidad i 
 
-# Función objetivo
-Model.obj = Objective(expr=sum(Model.x[i, j, k]*distancias[i-1][j-1] for i in L for j in L for k in V), sense=minimize)
-# Restricciones
 
-# Restriccion 1 Cada municipio debe ser visitado por un vehiculo una vez
+# Función objetivo: minimizar la distancia total recorrida
+Model.obj = Objective(
+    expr=sum(distancias[i-1][j-1]*Model.x[i,j,k] 
+             for i in L for j in L for k in V if i != j),
+    sense=minimize
+)
+
 # Restricción 1: cada cliente debe ser visitado exactamente una vez
 Model.res1 = ConstraintList()
 for j in D:
-    Model.res1.add(sum(Model.x[i, j, k] for i in L if i != j for k in V) == 1)
+    Model.res1.add(
+        sum(Model.x[i,j,k] for i in L if i != j for k in V) == 1
+    )
 
-# Restriccion 2 Se sale del puerto solo una vez
+# Restricción 2: desde el depósito/puerto sale un nodo por vehículo
 Model.res2 = ConstraintList()
 for k in V:
     Model.res2.add(
-        sum(Model.x[1,j,k] for j in L if j!=1) == 1
+        sum(Model.x[1,j,k] for j in L if j != 1) == 1
+    )
+
+# Restricción 3: al depósito/puerto llega un nodo por vehículo
+Model.res3 = ConstraintList()
+for k in V:
+    Model.res3.add(
+        sum(Model.x[i,1,k] for i in L if i != 1) == 1
+    )
+
+# Restricción 4: si un vehículo entra a un nodo, también debe salir de él. Conservación de flujo
+Model.res4 = ConstraintList()
+for k in V:
+    for h in D:
+        Model.res4.add(
+            sum(Model.x[i,h,k] for i in L if i != h) == sum(Model.x[h,j,k] for j in L if j != h)
         )
 
-# Restriccion 3 Cada vehiculo que llega a un municipio debe salir de ese municipio. Restriccion de flujo
-Model.res3 = ConstraintList()
-for j in D:  # solo aplica a clientes
-    for k in V:
-        Model.res3.add(
-            sum(Model.x[i, j, k] for i in L if i != j) ==
-            sum(Model.x[j, i, k] for i in L if i != j)
-        )
-            
-# Restriccion 4: eliminacion de subrutas dentro de un vehiculo
-Model.res4 = ConstraintList()
+# Restricción 5: eliminación de subciclos (MTZ)
+Model.res5 = ConstraintList()
 for k in V:
     for i in D:
         for j in D:
             if i != j:
-                Model.res4.add(
-                    Model.u[i, k] - Model.u[j, k] + numPuntosDestino * Model.x[i, j, k] <= numPuntosDestino - 1
+                Model.res5.add(
+                    Model.u[i,k] - Model.u[j,k] + numLocalidades * Model.x[i,j,k] <= numLocalidades - 1
                 )
 
-# Restriccion 5: no superar la capacidad de los vehiculos
-# Cv <= demanda de clientes Xikj * Demandai
-Model.res5 = ConstraintList()
-Model.res5.add(
-    sum(D_demanda[i] * sum(Model.x[i, j, k] for j in L if j != i) for i in D) <= V_capacidad[k]
-)
-
-# # Restriccion 6: no superar la autonomia de los vehiculos
+# Restricción 6 : Capacidad de cada vehículo
 Model.res6 = ConstraintList()
 for k in V:
     Model.res6.add(
-        sum(Model.x[i, j, k] * distancias[i - 1][j - 1] for i in L for j in L if i != j) <= V_autonomia[k]
+        sum(D_demanda[i] * sum(Model.x[i,j,k] for j in L if i != j) for i in D) <= V_capacidad[k]
     )
-    
-# Model.res_uso_minimo = Constraint(expr=sum(Model.x[i, j, k] for i in L for j in L for k in V if i != j) >= 1)
+
+# Restricción 7: Autonomía de cada vehículo
+Model.res7 = ConstraintList()
+for k in V:
+    Model.res7.add(
+        sum(distancias[i-1][j-1] * Model.x[i,j,k] for i in L for j in L if i != j) <= V_autonomia[k]
+    )
+
+solver = SolverFactory('glpk')
+solver.options['tmlim'] = 300 # tiempo límite de 5 minutos
+results = solver.solve(Model, tee=True)
 
 
-# Especificacion del solver
-SolverFactory("ipopt").solve(Model)
-#Model.display()
-print("\n📦 Arcos activos (x[i,j,k] == 1):")
-for i in L:
-    for j in L:
-        if i != j:
-            for k in V:
-                val = Model.x[i, j, k].value
-                if val is not None and val > 0.5:
-                    print(f"x[{i},{j},{k}] = {val}")
+velocidad = 50  # km/h - estimación de velocidad promedio
+tarifa_flete = 5000
+costo_mantenimiento = 700
+costo_km = tarifa_flete + costo_mantenimiento  # 5700
+for k in V:
+    ruta = [1]  # siempre inicia en PTO
+    actual = 1
+    while True:
+        next_nodo = None
+        for j in L:
+            if j != actual and Model.x[actual, j, k].value == 1:
+                next_nodo = j
+                ruta.append(j)
+                actual = j
+                break
+        if next_nodo == 1 or next_nodo is None:
+            break
 
-# Imprimir rutas
-def imprimir_rutas(Model, L, V, origen=1):
-    print("\n📍 Rutas por vehículo:")
-    for k in V:
-        ruta = [origen]
-        actual = origen
-        visitados = set()
-        while True:
-            encontrado = False
-            for j in L:
-                if j != actual:
-                    val = Model.x[actual, j, k].value
-                    if val is not None and val > 0.5 and j not in visitados:
-                        ruta.append(j)
-                        visitados.add(j)
-                        actual = j
-                        encontrado = True
-                        break
-            if not encontrado:
-                break  # no hay más destinos desde esta ciudad
-        if len(ruta) > 1:
-            print(f"🛻 Vehículo {k}: {' -> '.join(map(str, ruta))}")
-        else:
-            print(f"🛻 Vehículo {k}: no se utilizó.")
+    ruta_nombres = ["PTO"] + [f"MUN{str(nodo).zfill(2)}" for nodo in ruta[1:-1]] + ["PTO"]
 
-# Llamar la función (ajusta si cambias los conjuntos)
-imprimir_rutas(Model, L, V)
-print ("D_demanda: " + str(D_demanda))
-print ("V_capacidad: " + str(V_capacidad))
-print ("V_autonomia: " + str(V_autonomia))
-print("Distancia minima: " + str(value(Model.obj)))
+    demandas = [D_demanda[n] for n in ruta if n in D_demanda]
+    total_demanda = sum(demandas)
+    total_distancia = sum(distancias[ruta[i]-1][ruta[i+1]-1] for i in range(len(ruta)-1))
+    tiempo = round(total_distancia / velocidad, 2)
+    costo = round(total_distancia * costo_km)
+
+    print(f"{k} CAM{str(k).zfill(3)} ,{V_capacidad[k]} ,{V_autonomia[k]} , {' - '.join(ruta_nombres)}")
+    print(f",→ ,{len(demandas)} ,{' - '.join(str(d) for d in demandas)} ,{total_demanda} ,{V_autonomia[k]} ,{round(total_distancia,1)} ,{tiempo} ,{costo}")
+
+# Calcular la distancia total recorrida por todos los vehículos
+distancia_total = 0
+for k in V:
+    ruta = [1]
+    actual = 1
+    while True:
+        next_nodo = None
+        for j in L:
+            if j != actual and Model.x[actual, j, k].value == 1:
+                next_nodo = j
+                ruta.append(j)
+                actual = j
+                break
+        if next_nodo == 1 or next_nodo is None:
+            break
+    distancia_total += sum(distancias[ruta[i]-1][ruta[i+1]-1] for i in range(len(ruta)-1))
+
+print(f"Distancia total recorrida por todos los vehículos: {round(distancia_total, 2)} km")
