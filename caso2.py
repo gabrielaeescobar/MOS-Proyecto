@@ -257,21 +257,22 @@ def exportar_resultados_vehiculos(Model, distancias, D_demanda, V_capacidad, V_a
         total_cost = round(distancia_total * costo_km + fuel_cost)
 
         resultados.append([
-            f"CAM{str(k).zfill(3)}", # VehicleId
-            V_capacidad[k], # LoadCap
-            V_autonomia[k], # FuelCap
-            ' - '.join(ruta_nombres), # RouteSequence
-            len(municipios), # Municipalities
-            total_demanda, # DemandSatisfied 
-            ' - '.join(str(d) for d in demandas), # Demandas
-            V_autonomia[k], # InitLoad
-            len(refuel_stops), # RefuelStops
-            ' - '.join(str(a) for a in refuel_amounts) if refuel_amounts else "0", # RefuelAmounts
-            round(distancia_total, 1), # Distance
-            tiempo, # Time
-            fuel_cost, # FuelCost
-            total_cost # TotalCost
+            f"CAM{str(k).zfill(3)}",                                                # VehicleId
+            V_capacidad[k],                                                         # LoadCap
+            V_autonomia[k],                                                         # FuelCap
+            ' - '.join(ruta_nombres),                                               # RouteSequence
+            len(municipios),                                                        # Municipalities
+            ' - '.join(str(int(d)) if d.is_integer() else str(d) for d in demandas),# DemandSatisfied 
+            total_demanda,                                                          # InitialLoad
+            V_autonomia[k],                                                         # InitFuel
+            len(refuel_stops),                                                      # RefuelStops
+            ' - '.join(str(a) for a in refuel_amounts) if refuel_amounts else "0",  # RefuelAmounts
+            round(distancia_total, 1),                                              # Distance
+            tiempo,                                                                 # Time
+            fuel_cost,                                                              # FuelCost
+            total_cost                                                              # TotalCost
         ])
+
 
     df_resultados = pd.DataFrame(resultados, columns=columnas)
     df_resultados.to_csv("Proyecto_C_Caso2/verificacion_caso2.csv", index=False)
