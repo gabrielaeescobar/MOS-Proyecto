@@ -12,7 +12,7 @@ estaciones = pd.read_csv('Proyecto_C_Caso2/stations.csv')
 vehiculos = pd.read_csv('Proyecto_C_Caso2/vehicles.csv')
 
 df = pd.read_csv('Proyecto_C_Caso2/locations_initial.csv')
-# tomamos el mismo origen y las mismas primeras 15 localidades que en el caso base
+# tomamos  origen y las 15 localidades dadas en el enunciado
 df = df[df['LocationID'] < 16]
 
 df.to_csv('Proyecto_C_Caso2/locations.csv', index=False)
@@ -60,8 +60,8 @@ for i in range(len(locations_csv)):
         locs_i.append(geodesic(coord, coord2).kilometers)
     
         j+=1
-    df_locs_i = pd.DataFrame([locs_i])
-    df_locs_i.to_csv('Proyecto_C_Caso2/distancias.csv', mode='a', header=False, index=False)
+    # df_locs_i = pd.DataFrame([locs_i])
+    # df_locs_i.to_csv('Proyecto_C_Caso2/distancias.csv', mode='a', header=False, index=False)
     distancias.append(locs_i)
 
 print (distancias)
