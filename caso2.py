@@ -212,7 +212,7 @@ for k in V:
         )
 
 solver = SolverFactory('glpk')
-solver.options['tmlim'] = 60 # tiempo límite de 5 minutos
+solver.options['tmlim'] = 300 # tiempo límite de 5 minutos
 results = solver.solve(Model, tee=True)
 
 
@@ -279,6 +279,24 @@ def exportar_resultados_vehiculos(Model, distancias, D_demanda, V_capacidad, V_a
     return df_resultados
 
 df = exportar_resultados_vehiculos(Model, distancias, D_demanda, V_capacidad, V_autonomia, E_costo, L, D, E, V)
+
+# Verificación: revisar si todos los municipios fueron visitados
+esperados = set(range(2, numPuntosDestino + 2))  # municipios esperados: 2 al 15
+nodos_visitados = set()
+
+for secuencia in df['RouteSequence']:
+    for nodo in secuencia.split(' - '):
+        if 'MUN' in nodo:
+            nodos_visitados.add(int(nodo.replace('MUN', '')))
+
+faltantes = esperados - nodos_visitados
+
+if not faltantes:
+    print("\n✅ Todos los municipios fueron visitados al menos una vez.")
+else:
+    print(f"\n⚠️ Municipios NO visitados: {sorted(faltantes)}")
+
+
 distancia_total = df['Distance'].sum()
 print(f'Distancia total recorrida por todos los vehículos: {round(distancia_total, 2)} km')
 
