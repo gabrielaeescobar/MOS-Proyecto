@@ -12,7 +12,7 @@ estaciones = pd.read_csv('Proyecto_C_Caso2/stations.csv')
 vehiculos = pd.read_csv('Proyecto_C_Caso2/vehicles.csv')
 
 df = pd.read_csv('Proyecto_C_Caso2/locations_initial.csv')
-# tomamos el mismo origen y las mismas primeras 15 localidades que en el caso base
+# tomamos  origen y las 15 localidades dadas en el enunciado
 df = df[df['LocationID'] < 16]
 
 df.to_csv('Proyecto_C_Caso2/locations.csv', index=False)
@@ -60,8 +60,8 @@ for i in range(len(locations_csv)):
         locs_i.append(geodesic(coord, coord2).kilometers)
     
         j+=1
-    df_locs_i = pd.DataFrame([locs_i])
-    df_locs_i.to_csv('Proyecto_C_Caso2/distancias.csv', mode='a', header=False, index=False)
+    # df_locs_i = pd.DataFrame([locs_i])
+    # df_locs_i.to_csv('Proyecto_C_Caso2/distancias.csv', mode='a', header=False, index=False)
     distancias.append(locs_i)
 
 print (distancias)
@@ -88,10 +88,11 @@ numEstaciones = len(estaciones)
 
 # Conjuntos
 P = RangeSet(1, numPuertos)
-L = RangeSet(1, numLocalidades)
 D = RangeSet(2, numPuntosDestino+1) 
 V = RangeSet(1, numVehiculos)
 E = RangeSet(numPuntosDestino + 2, numLocalidades)
+#  locations con todo
+L= RangeSet(1, numLocalidades)
 
 # Parámetros
 # Demanda de los clientes
@@ -114,24 +115,25 @@ E_costo = {}
 for i in range(numPuntosDestino + 2, numLocalidades+1):
     E_costo[i] = estaciones['FuelCost'][i-numPuntosDestino-2]
 
+tarifa_flete_km = 5000   # Ft
+costo_mantenimiento_km = 700  # Cm
+costo = tarifa_flete_km + costo_mantenimiento_km
+N_intermedios = RangeSet(2, numLocalidades)  # todo excepto el depósito
+
 # Variables de decisión
 Model.x = Var(L,L,V, domain=Binary) # x[i,j,k] = 1 si el vehiculo k viaja de i a j
-Model.u = Var(D, V, bounds=(1, numLocalidades - 1), domain=Integers) # u[i,k] = número de localidades visitadas por el vehículo k al visitar la localidad i 
-Model.combustible = Var(L, V, domain=NonNegativeReals) # combustible[i,k] = cantidad de combustible que tiene el vehiculo k al llegar a la localidad i
-Model.recarga = Var(E, V, domain=NonNegativeReals)  # recarga[i,k] = cantidad de combustible que el vehiculo k recarga en la estación i
-
-for k in V:
-    Model.combustible[1, k].fix(V_autonomia[k])  # fija el combustible inicial al máximo de autonomía del vehículo k
-
-print(E_costo, "costo de recarga")
+Model.u = Var(N_intermedios, V, bounds=(1, numLocalidades - 1), domain=Integers)
+Model.c = Var(L, V, domain=NonNegativeReals) # combustible
+Model.r = Var(E, V, domain=NonNegativeReals) # recarga
 
 
 # Función objetivo: minimizar la distancia total recorrida y el costo de recarga
 Model.obj = Objective(
-    expr=sum(distancias[i-1][j-1]*Model.x[i,j,k] 
+    expr=sum(costo*distancias[i-1][j-1]*Model.x[i,j,k] 
              for i in L for j in L for k in V if i != j ) +
-         sum(E_costo[i]*Model.recarga[i,k] for i in E for k in V)
+         sum(E_costo[e]*Model.r[e,k] for e in E for k in V), sense=minimize
 )
+
 
 
 # Restricción 1: cada cliente debe ser visitado exactamente una vez
@@ -145,7 +147,7 @@ for j in D:
 Model.res2 = ConstraintList()
 for k in V:
     Model.res2.add(
-        sum(Model.x[1,j,k] for j in L if j != 1) == 1
+        sum(Model.x[1,j,k] for j in D) == 1
     )
 
 # Restricción 3: al depósito/puerto llega un nodo por vehículo
@@ -158,16 +160,17 @@ for k in V:
 # Restricción 4: si un vehículo entra a un nodo, también debe salir de él. Conservación de flujo
 Model.res4 = ConstraintList()
 for k in V:
-    for h in D:
-        Model.res4.add(
-            sum(Model.x[i,h,k] for i in L if i != h) == sum(Model.x[h,j,k] for j in L if j != h)
-        )
+    for h in L:
+        if h != 1:
+            Model.res4.add(
+                sum(Model.x[i,h,k] for i in L if i != h) == sum(Model.x[h,j,k] for j in L if j != h)
+            )
 
 # Restricción 5: eliminación de subciclos (MTZ)
 Model.res5 = ConstraintList()
 for k in V:
-    for i in D:
-        for j in D:
+    for i in N_intermedios:
+        for j in N_intermedios:
             if i != j:
                 Model.res5.add(
                     Model.u[i,k] - Model.u[j,k] + numLocalidades * Model.x[i,j,k] <= numLocalidades - 1
@@ -177,42 +180,34 @@ for k in V:
 Model.res6 = ConstraintList()
 for k in V:
     Model.res6.add(
-        sum(D_demanda[i] * sum(Model.x[i,j,k] for j in L if i != j) for i in D) <= V_capacidad[k]
+        sum(D_demanda[i] * sum(Model.x[j,i,k] for j in L if j != i) for i in D) <= V_capacidad[k]
     )
-
-# Restricción 7: Autonomía de cada vehículo
+    
+# Restricción 7: Continuidad del nivel de combustible
 Model.res7 = ConstraintList()
-for k in V:
-    Model.res7.add(
-        sum(distancias[i-1][j-1] * Model.x[i,j,k] for i in L for j in L if i != j) <= V_autonomia[k]
-    )
-
-# Restricción 8: el combustible que tiene un vehículo al llegar a una localidad es igual al combustible que tenía al salir menos la distancia recorrida 
-consumo = 0.25 # km/litro - asumimos un consumo de 0.25 km/litro
-Model.res8 = ConstraintList()
 for k in V:
     for i in L:
         for j in L:
-            if i !=j:
-                Model.res8.add( 
-                    Model.combustible[j,k] >= Model.combustible[i,k] - consumo*distancias[i-1][j-1] * Model.x[i,j,k] + (Model.recarga[i,k] if i in list(E) else 0) 
-                )  #  se asume que se gasta 1 unidad de combustible por km recorrido
+            if i != j:
+                recarga = Model.r[i, k] if i in E else 0  # solo recarga si está en estación
+                Model.res7.add(
+                    Model.c[j, k] >= Model.c[i, k] + recarga - distancias[i-1][j-1] * Model.x[i, j, k]
+                )
 
-# Restricción 9: solo se puede recargar si el vehículo pasa por una estación
-Model.res9 = ConstraintList()
+# Restricción 8: el nivel de combustible y la recarga no pueden exceder la capacidad del tanque
+Model.res8 = ConstraintList()
 for k in V:
+    for i in L:
+        Model.res8.add(
+            Model.c[i, k] <= V_autonomia[k]
+        )
     for i in E:
-        Model.res9.add(Model.recarga[i, k] <= V_autonomia[k] * sum(Model.x[i, j, k] for j in L if j != i))
-
-Model.res10 = ConstraintList()
-for k in V:
-    for i in E:
-        Model.res10.add(
-            Model.combustible[i, k] + Model.recarga[i, k] <= V_autonomia[k]
+        Model.res8.add(
+            Model.r[i, k] <= V_autonomia[k]
         )
 
 solver = SolverFactory('glpk')
-solver.options['tmlim'] = 60 # tiempo límite de 5 minutos
+solver.options['tmlim'] = 300 # tiempo límite de 5 minutos
 results = solver.solve(Model, tee=True)
 
 
@@ -249,10 +244,11 @@ def exportar_resultados_vehiculos(Model, distancias, D_demanda, V_capacidad, V_a
         total_demanda = sum(demandas)
         distancia_total = sum(distancias[ruta[i]-1][ruta[i+1]-1] for i in range(len(ruta)-1))
         tiempo = round(distancia_total / velocidad, 2)
-        refuel_stops = [i for i in ruta if i in E and Model.recarga[i, k].value > 0.1] # es para decir que el vehiculo recarga en la estacion i, como si fuera recarga[i,k] > 0 
-        refuel_amounts = [round(Model.recarga[i, k].value, 2) for i in refuel_stops]
-        fuel_cost = sum(round(Model.recarga[i, k].value * E_costo[i]) for i in E if Model.recarga[i, k].value > 0.1) # es para decir que el vehiculo recarga en la estacion i, como si fuera recarga[i,k] > 0 
-        refuel_amounts = [round(Model.recarga[i, k].value, 2) for i in refuel_stops]
+        refuel_stops = [i for i in ruta if i in E and Model.r[i, k].value > 0.1] # es para decir que el vehiculo recarga en la estacion i, como si fuera recarga[i,k] > 0 
+        refuel_amounts = [round(Model.r[i, k].value, 2) for i in refuel_stops]
+        fuel_cost = sum(Model.r[i, k].value * E_costo[i] for i in E if Model.r[i, k].value > 0.1)
+        fuel_cost = round(fuel_cost, 2)
+        refuel_amounts = [round(Model.r[i, k].value, 2) for i in refuel_stops]
         costo_km = tarifa_flete + costo_mantenimiento
         total_cost = round(distancia_total * costo_km + fuel_cost)
 
@@ -281,4 +277,3 @@ def exportar_resultados_vehiculos(Model, distancias, D_demanda, V_capacidad, V_a
 df = exportar_resultados_vehiculos(Model, distancias, D_demanda, V_capacidad, V_autonomia, E_costo, L, D, E, V)
 distancia_total = df['Distance'].sum()
 print(f'Distancia total recorrida por todos los vehículos: {round(distancia_total, 2)} km')
-

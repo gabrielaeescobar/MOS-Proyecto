@@ -53,14 +53,13 @@ print (distancias)
 # Incluir restricciones de capacidad y autonomía de los vehículos.
 # Validar factibilidad de la solución considerando solamente distancia y demanda.
 
+
 Model = ConcreteModel()
 
 numPuertos = 1
 numPuntosDestino = 24
 numLocalidades = len(distancias)
 numVehiculos = 8
-
-print(numLocalidades)
 
 # Conjuntos
 P= RangeSet(1, numPuertos) 
@@ -83,7 +82,9 @@ V_autonomia = {}
 for i in range(1, numVehiculos+1):
     V_autonomia[i] = vehiculos['Range'][i-1]
 
-print(V_capacidad)
+tarifa_flete_km = 5000   # Ft
+costo_mantenimiento_km = 700  # Cm
+costo = tarifa_flete_km + costo_mantenimiento_km
 
 # Variables de decisión
 Model.x = Var(L,L,V, domain=Binary) # x[i,j,k] = 1 si el vehiculo k viaja de i a j
@@ -92,10 +93,17 @@ Model.u = Var(D, V, bounds=(1, numLocalidades - 1), domain=Integers) # u[i,k] = 
 
 # Función objetivo: minimizar la distancia total recorrida
 Model.obj = Objective(
-    expr=sum(distancias[i-1][j-1]*Model.x[i,j,k] 
+    expr=sum(costo*distancias[i-1][j-1]*Model.x[i,j,k] 
              for i in L for j in L for k in V if i != j),
     sense=minimize
 )
+
+# Restricción 0: el vehículo no puede salir del puerto/deposito para visitar el puerto/deposito
+# (esto es para evitar que el vehículo salga y vuelva al puerto/deposito sin visitar ningún cliente)
+Model.res0 = ConstraintList()
+for k in V:
+    Model.res0.add(Model.x[1, 1, k] == 0)
+
 
 # Restricción 1: cada cliente debe ser visitado exactamente una vez
 Model.res1 = ConstraintList()
@@ -131,6 +139,7 @@ Model.res5 = ConstraintList()
 for k in V:
     for i in D:
         for j in D:
+            
             if i != j:
                 Model.res5.add(
                     Model.u[i,k] - Model.u[j,k] + numLocalidades * Model.x[i,j,k] <= numLocalidades - 1
@@ -140,8 +149,9 @@ for k in V:
 Model.res6 = ConstraintList()
 for k in V:
     Model.res6.add(
-        sum(D_demanda[i] * sum(Model.x[i,j,k] for j in L if i != j) for i in D) <= V_capacidad[k]
+        sum(D_demanda[i] * sum(Model.x[j,i,k] for j in L if j != i) for i in D) <= V_capacidad[k]
     )
+
 
 # Restricción 7: Autonomía de cada vehículo
 Model.res7 = ConstraintList()
@@ -151,91 +161,59 @@ for k in V:
     )
 
 solver = SolverFactory('glpk')
-solver.options['tmlim'] = 100 # tiempo límite de 5 minutos
+solver.options['tmlim'] = 300 # tiempo límite de 5 minutos
 results = solver.solve(Model, tee=True)
 
 
-velocidad = 50  # km/h - estimación de velocidad promedio
-tarifa_flete = 5000
-costo_mantenimiento = 700
-costo_km = tarifa_flete + costo_mantenimiento  # 5700
-for k in V:
-    ruta = [1]  # siempre inicia en PTO
-    actual = 1
-    while True:
-        next_nodo = None
-        for j in L:
-            if j != actual and Model.x[actual, j, k].value == 1:
-                next_nodo = j
-                ruta.append(j)
-                actual = j
+def exportar_resultados_vehiculos(Model, distancias, D_demanda, V_capacidad, V_autonomia, L, D, V, velocidad=50, tarifa_flete=5000, costo_mantenimiento=700):
+    columnas = [
+        'VehicleId', 'LoadCap', 'FuelCap', 'RouteSequence', 'Municipalities', 'DemandSatisfied',
+        'InitialLoad', 'InitialFuel', 'Distance', 'Time', 'TotalCost'
+    ]
+    resultados = []
+    # recrear el modelo para obtener los resultados
+    for k in V:
+        ruta = [1]
+        actual = 1
+
+        while True:
+            siguiente = None
+            for j in L:
+                if j != actual and Model.x[actual, j, k].value and Model.x[actual, j, k].value > 0.5:
+                    siguiente = j
+                    ruta.append(j)
+                    actual = j
+                    break
+            if siguiente is None or actual == 1:
                 break
-        if next_nodo == 1 or next_nodo is None:
-            break
+            
 
-    ruta_nombres = ["PTO"] + [f"MUN{str(nodo).zfill(2)}" for nodo in ruta[1:-1]] + ["PTO"]
+        nombres_ruta = ["PTO"] + [f"MUN{str(nodo).zfill(2)}" for nodo in ruta[1:-1]] + ["PTO"]
+        route_sequence = " - ".join(nombres_ruta)
+        municipios = [n for n in ruta if n in D_demanda]
+        demandas = [D_demanda[n] for n in municipios]
+        demanda_str = "-".join(str(int(d)) if d.is_integer() else str(d) for d in demandas)
+        distancia_total = sum(distancias[ruta[i]-1][ruta[i+1]-1] for i in range(len(ruta)-1)  )
+        tiempo_min = round((distancia_total / velocidad) * 60, 1)   # minutos
+        total_cost = round(distancia_total * (tarifa_flete + costo_mantenimiento))
 
-    demandas = [D_demanda[n] for n in ruta if n in D_demanda]
-    total_demanda = sum(demandas)
-    total_distancia = sum(distancias[ruta[i]-1][ruta[i+1]-1] for i in range(len(ruta)-1))
-    tiempo = round(total_distancia / velocidad, 2)
-    costo = round(total_distancia * costo_km)
+        resultados.append([
+            f"CAM{str(k).zfill(3)}",             # VehicleId
+            V_capacidad[k],                      # LoadCap
+            V_autonomia[k],                      # FuelCap
+            route_sequence,                      # RouteSequence
+            len(municipios),                     # Municipalities
+            demanda_str,                         # DemandSatisfied
+            sum(demandas),                       # InitialLoad
+            V_autonomia[k],                      # InitialFuel
+            round(distancia_total, 1),           # Distance
+            tiempo_min,                          # Time
+            total_cost                           # TotalCost
+        ])
+    df_resultados = pd.DataFrame(resultados, columns=columnas)
+    df_resultados.to_csv("Proyecto_Caso_Base/verificacion_caso1.csv", index=False)
+    return df_resultados
 
-    print(f"{k} CAM{str(k).zfill(3)} ,{V_capacidad[k]} ,{V_autonomia[k]} , {' - '.join(ruta_nombres)}")
-    print(f",→ ,{len(demandas)} ,{' - '.join(str(d) for d in demandas)} ,{total_demanda} ,{V_autonomia[k]} ,{round(total_distancia,1)} ,{tiempo} ,{costo}")
-
-# Calcular la distancia total recorrida por todos los vehículos
-distancia_total = 0
-for k in V:
-    ruta = [1]
-    actual = 1
-    while True:
-        next_nodo = None
-        for j in L:
-            if j != actual and Model.x[actual, j, k].value == 1:
-                next_nodo = j
-                ruta.append(j)
-                actual = j
-                break
-        if next_nodo == 1 or next_nodo is None:
-            break
-    distancia_total += sum(distancias[ruta[i]-1][ruta[i+1]-1] for i in range(len(ruta)-1))
-
-print(f"Distancia total recorrida por todos los vehículos: {round(distancia_total, 2)} km")
-import matplotlib.pyplot as plt
-import networkx as nx
-
-# Coordenadas de cada nodo
-coords = {i+1: (locations_csv['Longitude'][i], locations_csv['Latitude'][i]) for i in range(len(locations_csv))}
-
-for k in V:
-    G = nx.DiGraph()
-    ruta = [1]
-    actual = 1
-    while True:
-        next_nodo = None
-        for j in L:
-            if j != actual and Model.x[actual, j, k].value == 1:
-                next_nodo = j
-                ruta.append(j)
-                actual = j
-                break
-        if next_nodo == 1 or next_nodo is None:
-            break
-
-    if len(ruta) > 1:
-        ruta.append(1)  # cerrar ciclo
-
-        G.add_nodes_from(ruta)
-        for i in range(len(ruta)-1):
-            G.add_edge(ruta[i], ruta[i+1])
-
-        plt.figure(figsize=(10,6))
-        pos = {n: coords[n] for n in ruta}
-        nx.draw_networkx_nodes(G, pos, node_color='skyblue', node_size=500)
-        nx.draw_networkx_labels(G, pos, labels={n: f"{'PTO' if n==1 else f'MUN{n:02d}'}" for n in ruta})
-        nx.draw_networkx_edges(G, pos, arrowstyle='->', arrowsize=20)
-        plt.title(f"Ruta del Vehículo {k}")
-        plt.axis('off')
-        plt.show()
-
+df = exportar_resultados_vehiculos(Model, distancias, D_demanda, V_capacidad, V_autonomia, L, D, V)
+distancia_total = df['Distance'].sum()
+print(f'Distancia total recorrida por todos los vehículos: {round(distancia_total, 2)} km')
