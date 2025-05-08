@@ -25,7 +25,6 @@ for i in range(len(estaciones)):
 locations_csv = pd.read_csv('Proyecto_C_Caso2/locations.csv')
 
 # Calcular matriz de distancias
-from geopy.distance import geodesic
 distancias = []
 for i in range(len(locations_csv)):
     coord_i = (locations_csv['Latitude'][i], locations_csv['Longitude'][i])
@@ -80,19 +79,19 @@ for j in D:
         sum(Model.x[i, j, k] for i in L if i != j for k in V) == 1
     )
 
-#Asegurar que si un cliente es visitado debe salir también (flujo entrante = saliente)
+# Restricción 1b: debe haber salida también del cliente
 Model.res1b = ConstraintList()
 for j in D:
     Model.res1b.add(
         sum(Model.x[j, m, k] for m in L if m != j for k in V) == 1
     )
 
-# Restricción 2: un nodo sale desde el depósito por vehículo
+# Restricción 2: salida del depósito por vehículo
 Model.res2 = ConstraintList()
 for k in V:
     Model.res2.add(sum(Model.x[1, j, k] for j in L if j != 1) == 1)
 
-# Restricción 3: debe regresar al depósito
+# Restricción 3: regreso al depósito
 Model.res3 = ConstraintList()
 for k in V:
     Model.res3.add(sum(Model.x[i, 1, k] for i in L if i != 1) == 1)
@@ -117,41 +116,42 @@ Model.res6 = ConstraintList()
 for k in V:
     Model.res6.add(sum(D_demanda[i] * sum(Model.x[i, j, k] for j in L if i != j) for i in D) <= V_capacidad[k])
 
-# Restricción 7: autonomía total
-Model.res7 = ConstraintList()
-for k in V:
-    Model.res7.add(sum(distancias[i-1][j-1] * Model.x[i, j, k] for i in L for j in L if i != j) <= V_autonomia[k])
-
-# Restricción 8: dinámica de combustible
+# Restricción 7: autonomía dinámica y recarga
 consumo = 0.25
-Model.res8 = ConstraintList()
+Model.res7 = ConstraintList()
 for k in V:
     for i in L:
         for j in L:
             if i != j:
-                Model.res8.add(
+                Model.res7.add(
                     Model.combustible[j, k] >= Model.combustible[i, k] - consumo * distancias[i-1][j-1] * Model.x[i, j, k] +
                     (Model.recarga[i, k] if i in list(E) else 0)
                 )
 
-# Restricción 9: solo puede recargar si pasa por estación
+# Restricción 8: solo puede recargar si pasa por estación
+Model.res8 = ConstraintList()
+for k in V:
+    for i in E:
+        Model.res8.add(Model.recarga[i, k] <= V_autonomia[k] * sum(Model.x[i, j, k] for j in L if j != i))
+
+# Restricción 9: no superar autonomía
 Model.res9 = ConstraintList()
 for k in V:
     for i in E:
-        Model.res9.add(Model.recarga[i, k] <= V_autonomia[k] * sum(Model.x[i, j, k] for j in L if j != i))
+        Model.res9.add(Model.combustible[i, k] + Model.recarga[i, k] <= V_autonomia[k])
 
-# Restricción 10: no superar autonomía al recargar
+# Restricción adicional: penalizar rutas inútiles sin municipios atendidos
 Model.res10 = ConstraintList()
 for k in V:
-    for i in E:
-        Model.res10.add(Model.combustible[i, k] + Model.recarga[i, k] <= V_autonomia[k])
+    atendidos = sum(Model.x[i, j, k] for i in D for j in L if i != j)
+    Model.res10.add(atendidos >= 1)
 
-# Resolver
+# Solución
 solver = SolverFactory('glpk')
 solver.options['tmlim'] = 600
 results = solver.solve(Model, tee=True)
 
-# Validación de cobertura
+# Verificación de cobertura
 municipios_visitados = []
 for j in D:
     entrada = sum(Model.x[i, j, k].value for i in L if i != j for k in V)
@@ -160,8 +160,10 @@ for j in D:
 
 municipios_no_visitados = [j for j in D if j not in municipios_visitados]
 print("⚠️ Municipios NO visitados:", municipios_no_visitados)
+print("Demanda total:", sum(D_demanda[i] for i in D))
+print("Demanda cubierta:", sum(D_demanda[i] for i in D if i in municipios_visitados))
 
-# FUNCION EXPORTAR RESULTADOS
+# Exportar resultados
 
 def exportar_resultados_vehiculos(Model, distancias, D_demanda, V_capacidad, V_autonomia, E_costo, L, D, E, V, velocidad=50, tarifa_flete=5000, costo_mantenimiento=700):
     columnas = [
@@ -205,7 +207,7 @@ def exportar_resultados_vehiculos(Model, distancias, D_demanda, V_capacidad, V_a
             V_autonomia[k],
             ' - '.join(ruta_nombres),
             len(municipios),
-            ' - '.join(str(int(d)) if d.is_integer() else str(d) for d in demandas),
+            ' - '.join(str(int(d)) if isinstance(d, (int, float)) and float(d).is_integer() else str(d) for d in demandas),
             total_demanda,
             V_autonomia[k],
             len(refuel_stops),
@@ -221,6 +223,3 @@ def exportar_resultados_vehiculos(Model, distancias, D_demanda, V_capacidad, V_a
     return df_resultados
 
 exportar_resultados_vehiculos(Model, distancias, D_demanda, V_capacidad, V_autonomia, E_costo, L, D, E, V)
-print("Demanda total:", sum(clientes["Demand"]))
-print("Demanda cubierta:", sum(Model.x[i, j, k].value * D_demanda[j] 
-                                 for i in L for j in D for k in V if i != j))
