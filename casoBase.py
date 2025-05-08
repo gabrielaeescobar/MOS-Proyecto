@@ -42,8 +42,8 @@ for i in range(len(locations_csv)):
         locs_i.append(geodesic(coord, coord2).kilometers)
     
         j+=1
-    df_locs_i = pd.DataFrame([locs_i])
-    df_locs_i.to_csv('Proyecto_Caso_Base/distancias.csv', mode='a', header=False, index=False)
+    #df_locs_i = pd.DataFrame([locs_i])
+    #df_locs_i.to_csv('Proyecto_Caso_Base/distancias.csv', mode='a', header=False, index=False)
     distancias.append(locs_i)
 
 print (distancias)
