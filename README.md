@@ -1,11 +1,12 @@
 # MOS-Proyecto-1
 ### Integrantes
-Mariana Ortega
-Maria Alejandra Pinzon
-Gabriela Escobar
+Mariana Ortega - 202211233
+María Alejandra Pinzón - 202213956
+Gabriela Escobar - 201130766
+
 
 ## Archivos py
-En los archivos `.py` de cada caso, está el código de la implementación, sin ningún tipo de visualización ni análisis. En todos está, el procesamiento de datos, y el modelo implementado. Decidimos dejar estos archivos para que se pueda ver en un solo lugar el código de la implementaciones.
+En los archivos `.py` de cada caso, está el código de la implementación, sin ningún tipo de visualización ni análisis. En todos está, el procesamiento de datos, y el modelo implementado. Decidimos dejar estos archivos para que se pueda ver en un solo lugar el código de la implementaciones. Sin embargo, si se desea ver la implementacion completa en pyomo se debe acceder a los notebooks.
 ## Notebooks con análisis y código
 Cada caso tiene un jupyter notebook de tipo `.ipynb`. En estos, dejamos el mismo código que está en los archivos tipo `.py.`, pero ahora tiene:
 - Formulación matemática final, después de hacerle ajustes por la implementación.
