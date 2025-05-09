@@ -38,3 +38,20 @@ Los archivos `clients.csv`, `depots.csv`, `vehicles.csv`, `stations.csv` y `toll
 - `locations.csv` tiene todos los elementos que tienen locations, en este caso, los puertos y clientes. Anteriormente eran dados en archivos separados, y para el procesamiento de datos era pertinente tenerlos todos en uno solo. `locations_initial.csv` fue creada con el fin de corregir el error de la base de datos, que los clientes no tenian sus coordenadas.
 - `distancias.csv` es el archivo que muestra la matriz de ubicaciones.
 - `verificacion_caso2.csv` muestra la solución del caso base.
+
+#### Implementación y Resultados
+- Toda la solución correspondiente al Caso 3 se encuentra integrada en el notebook Caso3_Logistico.ipynb. En dicho notebook se desarrolla y ejecuta todo el flujo del modelo de optimización, incluyendo:
+
+- Modelo matemático completo implementado en Pyomo con estructura modular.
+
+- Visualización interactiva de rutas nacionales planificadas mediante mapas generados con folium, los cuales se despliegan directamente en el entorno del notebook.
+
+- Cálculo y visualización de resultados por vehículo, incluyendo rutas, costos desagregados, tiempos, distancias, recargas, pesos y cumplimiento de restricciones.
+
+- Evaluación de escenarios de sensibilidad, donde se modifican parámetros como el precio del combustible, la autonomía de los vehículos y la disponibilidad de estaciones de recarga.
+
+- Análisis detallado y respuestas a las preguntas clave del caso, elaboradas y documentadas dentro del mismo notebook.
+
+- No se exportan archivos ni mapas; toda la visualización y verificación se realiza de forma interactiva en el notebook.
+
+- Este diseño garantiza trazabilidad, claridad y reproducibilidad de los resultados dentro de un único entorno de trabajo.
